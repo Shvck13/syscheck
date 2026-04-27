@@ -1,4 +1,4 @@
-# Hey, soy Sergio 👋
+# Hey, soy Sergio 
 
 Estudiante de ASIR en Madrid, con bastante curiosidad por cómo funcionan los sistemas por dentro — y, más concretamente, cómo se rompen. Actualmente compaginando los estudios con proyectos propios enfocados en automatización, seguridad y scripting.
 
@@ -16,13 +16,13 @@ Me interesa especialmente todo lo que tiene que ver con ciberseguridad defensiva
 
 ## Algunos proyectos
 
-### 🔍 [syscheck](https://github.com/Shvck13/syscheck)
+### · [syscheck](https://github.com/Shvck13/syscheck)
 Herramienta CLI en Python para hacer auditorías básicas de seguridad en sistemas Linux: permisos, configuración SSH, servicios expuestos, usuarios sin contraseña... Lo arranqué porque en clase veíamos muchos conceptos de hardening pero pocos ejercicios prácticos para aplicarlos.
 
-### 🎙️ [video-transcription-whisper](https://github.com/Shvck13/video-transcription-whisper)
+### · [video-transcription-whisper](https://github.com/Shvck13/video-transcription-whisper)
 Script para descargar audio de cualquier vídeo online y transcribirlo automáticamente usando Whisper de OpenAI y yt-dlp. Soporta GPU si tienes una compatible con CUDA. Lo hice porque me cansé de tomar apuntes a mano de vídeos técnicos largos.
 
-### 🌐 [Portfolio personal](https://github.com/Shvck13/sergio-portfolio)
+### · [Portfolio personal](https://github.com/Shvck13/sergio-portfolio)
 Mi web personal, hecha con HTML. Sencilla, directa al grano.
 
 ---
