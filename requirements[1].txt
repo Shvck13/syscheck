@@ -1,0 +1,3 @@
+# syscheck no tiene dependencias externas.
+# Usa únicamente la librería estándar de Python (subprocess, os, stat, shutil...).
+# Solo necesitas Python 3.8 o superior.
