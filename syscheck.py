@@ -1,119 +1,96 @@
-# syscheck v2 - improved full project files
+#!/usr/bin/env python3
+"""
+syscheck — Linux Security Audit Tool
+Runs modular checks on users, SSH, file permissions, open ports,
+pending updates, firewall status, and suspicious cron jobs.
+"""
 
-# main.py
-import argparse, json
-from checks.users import run as users_check
-from checks.ssh import run as ssh_check
-from checks.perms import run as perms_check
-from checks.ports import run as ports_check
-from checks.updates import run as updates_check
-from output import print_results, save_report
+import argparse
+import json
+import sys
 
-CHECKS={"users":users_check,"ssh":ssh_check,"perms":perms_check,"ports":ports_check,"updates":updates_check}
+from checks.users   import run as check_users
+from checks.ssh     import run as check_ssh
+from checks.perms   import run as check_perms
+from checks.ports   import run as check_ports
+from checks.updates import run as check_updates
+from checks.cron    import run as check_cron
+from utils.output   import print_header, print_summary, disable_color
+from utils.report   import save_text_report, save_json_report
 
-def main():
-    p=argparse.ArgumentParser()
-    p.add_argument('--check', choices=list(CHECKS.keys())+['all'], default='all')
-    p.add_argument('--output')
-    p.add_argument('--json')
-    p.add_argument('--no-color', action='store_true')
-    args=p.parse_args()
-    selected = CHECKS.keys() if args.check=='all' else [args.check]
-    results={}
+
+# ── Registry ──────────────────────────────────────────────────────────────────
+
+CHECKS = {
+    "users":   (check_users,   "Users & Passwords"),
+    "ssh":     (check_ssh,     "SSH Configuration"),
+    "perms":   (check_perms,   "File Permissions & SUID"),
+    "ports":   (check_ports,   "Open Ports & Services"),
+    "updates": (check_updates, "Pending Updates & Firewall"),
+    "cron":    (check_cron,    "Cron Jobs"),
+}
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="syscheck",
+        description="Basic Linux security auditing tool.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join([
+            "Examples:",
+            "  sudo python3 syscheck.py                   # run all checks",
+            "  sudo python3 syscheck.py --check ssh        # single module",
+            "  sudo python3 syscheck.py --output report.txt",
+            "  sudo python3 syscheck.py --json report.json",
+            "  python3 syscheck.py --no-color > audit.log",
+        ]),
+    )
+    p.add_argument(
+        "--check",
+        choices=list(CHECKS.keys()) + ["all"],
+        default="all",
+        metavar="MODULE",
+        help=f"Module to run: {{{', '.join(CHECKS.keys())}, all}} (default: all)",
+    )
+    p.add_argument("--output", metavar="FILE", help="Save plain-text report to FILE")
+    p.add_argument("--json",   metavar="FILE", help="Save JSON report to FILE")
+    p.add_argument("--no-color", action="store_true", help="Disable ANSI color output")
+    return p
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    if args.no_color:
+        disable_color()
+
+    print_header()
+
+    selected = list(CHECKS.keys()) if args.check == "all" else [args.check]
+
+    all_results: list[dict] = []
     for name in selected:
-        results[name]=CHECKS[name]()
-    print_results(results, use_color=not args.no_color)
+        fn, label = CHECKS[name]
+        result = fn(label)
+        result["module"] = name
+        all_results.append(result)
+
+    print_summary(all_results)
+
     if args.output:
-        save_report(results,args.output)
+        save_text_report(all_results, args.output)
+
     if args.json:
-        with open(args.json,'w') as f: json.dump(results,f,indent=2)
+        save_json_report(all_results, args.json)
 
-if __name__=='__main__':
-    main()
+    # Exit 1 if any critical finding
+    has_critical = any(r.get("critical", 0) > 0 for r in all_results)
+    return 1 if has_critical else 0
 
-# output.py
-import os, socket, datetime
 
-def c(txt, code, use=True): return f'[{code}m{txt}[0m' if use else txt
-
-def print_results(results,use_color=True):
-    for section,items in results.items():
-        print(f'
-== {section.upper()} ==')
-        for item in items:
-            sev=item['severity']
-            color={'OK':'32','WARN':'33','CRITICAL':'31'}.get(sev,'0')
-            print(c(f'[{sev}] {item["message"]}',color,use_color))
-
-def save_report(results,path):
-    with open(path,'w') as f:
-        f.write(f'Syscheck Report
-Host: {socket.gethostname()}
-Date: {datetime.datetime.now()}
-')
-        for sec,items in results.items():
-            f.write(f'
-[{sec.upper()}]
-')
-            for i in items:
-                f.write(f'{i["severity"]}: {i["message"]}
-')
-
-# checks/users.py
-import subprocess
-
-def run():
-    out=[]
-    try:
-        r=subprocess.check_output(['getent','group','sudo'], text=True, stderr=subprocess.DEVNULL)
-        out.append({'severity':'OK','message':'sudo group found'})
-        out.append({'severity':'WARN','message':r.strip()})
-    except Exception:
-        out.append({'severity':'WARN','message':'sudo group not found'})
-    return out
-
-# checks/ssh.py
-from pathlib import Path
-
-def run():
-    out=[]
-    p=Path('/etc/ssh/sshd_config')
-    if not p.exists(): return [{'severity':'WARN','message':'sshd_config not found'}]
-    txt=p.read_text(errors='ignore')
-    if 'PermitRootLogin yes' in txt:
-        out.append({'severity':'CRITICAL','message':'Root login enabled'})
-    else:
-        out.append({'severity':'OK','message':'Root login disabled'})
-    return out
-
-# checks/perms.py
-import os
-
-def run():
-    out=[]
-    if os.path.exists('/etc/shadow'):
-        mode=oct(os.stat('/etc/shadow').st_mode)[-3:]
-        out.append({'severity':'OK' if mode=='640' else 'WARN','message':f'/etc/shadow perms {mode}'})
-    return out
-
-# checks/ports.py
-import subprocess
-
-def run():
-    out=[]
-    try:
-        data=subprocess.check_output(['ss','-tuln'], text=True)
-        lines=[l for l in data.splitlines() if 'LISTEN' in l]
-        out.append({'severity':'OK','message':f'{len(lines)} listening ports detected'})
-    except Exception:
-        out.append({'severity':'WARN','message':'Could not inspect ports'})
-    return out
-
-# checks/updates.py
-import shutil, subprocess
-
-def run():
-    if shutil.which('apt'):
-        return [{'severity':'WARN','message':'Run apt update && apt upgrade to verify pending updates'}]
-    return [{'severity':'WARN','message':'Package manager not supported yet'}]
-
+if __name__ == "__main__":
+    sys.exit(main())
