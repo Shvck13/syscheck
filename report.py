@@ -1,40 +1,78 @@
 """
-Genera un informe en texto plano a partir de los resultados de los checks.
+Report generation for syscheck.
+Supports plain-text and JSON output formats.
 """
 
+import json
+import socket
 from datetime import datetime
-import platform
+
+from utils.output import get_distro, VERSION
 
 
-def save_report(results: list, path: str):
-    lines = []
-    lines.append("=" * 50)
-    lines.append("  SYSCHECK — Informe de auditoría")
-    lines.append(f"  Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"  Sistema: {_get_distro()}")
-    lines.append("=" * 50)
-    lines.append("")
+# ── Public API ────────────────────────────────────────────────────────────────
 
-    ok_total   = sum(r.get("ok", 0)       for r in results)
-    warn_total = sum(r.get("warnings", 0) for r in results)
-    crit_total = sum(r.get("critical", 0) for r in results)
+def save_text_report(results: list[dict], path: str) -> None:
+    """Write a human-readable plain-text audit report to *path*."""
+    lines = _build_text_lines(results)
+    _write(path, "\n".join(lines))
+    print(f"  [*] Report saved → {path}")
 
-    lines.append(f"RESUMEN: {ok_total} OK  /  {warn_total} avisos  /  {crit_total} críticos")
-    lines.append("")
 
+def save_json_report(results: list[dict], path: str) -> None:
+    """Write a JSON audit report to *path*."""
+    payload = {
+        "syscheck_version": VERSION,
+        "host":   socket.gethostname(),
+        "date":   datetime.now().isoformat(timespec="seconds"),
+        "system": get_distro(),
+        "summary": {
+            "ok":       sum(r.get("ok",       0) for r in results),
+            "warnings": sum(r.get("warnings", 0) for r in results),
+            "critical": sum(r.get("critical", 0) for r in results),
+        },
+        "modules": results,
+    }
+    _write(path, json.dumps(payload, indent=2, default=str))
+    print(f"  [*] JSON report saved → {path}")
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _build_text_lines(results: list[dict]) -> list[str]:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sep = "=" * 52
+
+    lines = [
+        sep,
+        "  SYSCHECK — Security Audit Report",
+        f"  Date   : {now}",
+        f"  Host   : {socket.gethostname()}",
+        f"  System : {get_distro()}",
+        sep,
+        "",
+        f"SUMMARY:",
+        f"  OK       : {sum(r.get('ok',       0) for r in results)}",
+        f"  Warnings : {sum(r.get('warnings', 0) for r in results)}",
+        f"  Critical : {sum(r.get('critical', 0) for r in results)}",
+        "",
+    ]
+
+    for r in results:
+        module = r.get("module", "unknown").upper()
+        lines.append(f"[{module}]")
+        for entry in r.get("findings", []):
+            sev = entry.get("severity", "INFO")
+            msg = entry.get("message", "")
+            lines.append(f"  {sev:<8} {msg}")
+        lines.append("")
+
+    return lines
+
+
+def _write(path: str, content: str) -> None:
     try:
         with open(path, "w") as f:
-            f.write("\n".join(lines))
+            f.write(content)
     except OSError as e:
-        print(f"[!] No se pudo guardar el informe: {e}")
-
-
-def _get_distro():
-    try:
-        with open("/etc/os-release") as f:
-            for line in f:
-                if line.startswith("PRETTY_NAME"):
-                    return line.split("=")[1].strip().strip('"')
-    except FileNotFoundError:
-        pass
-    return platform.system()
+        print(f"  [!] Could not save report to '{path}': {e}")
